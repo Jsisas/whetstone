@@ -227,7 +227,13 @@ export function registerCommands(deps: Deps): void {
 			const cur = t?.current;
 			const step = currentStep();
 			if (!t || !cur || !step || t.phase !== "step" || step.owner !== "ME") return error(ctx, "WHETSTONE: /whet done ends your own (ME) step.");
-			const diff = await git.worktreeDiff(pi, t.repoRoot, step.files, git.DIFF_LIMIT, cur.baseTree);
+			let diff: string;
+			try {
+				diff = await git.worktreeDiff(pi, t.repoRoot, step.files, git.DIFF_LIMIT, cur.baseTree);
+			} catch (e) {
+				if (!(e instanceof git.GitError)) throw e;
+				return error(ctx, `WHETSTONE: could not diff ${step.files.join(", ")}: ${e.message}. The step stays active; fix git and run /whet done again.`);
+			}
 			if (!diff.trim()) return ctx.ui.notify(`Whetstone: nothing changed in ${step.files.join(", ")}.`, "warning");
 			setPhase("review");
 			await applyTools(pi, toolsFor(t, configForRoot(t.repoRoot)));

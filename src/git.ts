@@ -1,15 +1,33 @@
+import { statSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import type { ExecResult, ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 type Exec = Pick<ExtensionAPI, "exec">;
 
 /** Maximum characters of diff sent to the model or shown in prompts. */
 export const DIFF_LIMIT = 20_000;
 
+/** A git command that failed to run or exited with an unexpected code. */
+export class GitError extends Error {}
+
+async function gitStrict(pi: Exec, cwd: string, args: string[], okCodes: number[] = [0]): Promise<string> {
+	const cmd = `git ${args.join(" ")}`;
+	let r: ExecResult;
+	try {
+		r = await pi.exec("git", args, { cwd, timeout: 20_000 });
+	} catch (e) {
+		throw new GitError(`${cmd}: ${e instanceof Error ? e.message : String(e)}`);
+	}
+	if (!okCodes.includes(r.code)) {
+		const stderr = r.stderr.trim();
+		throw new GitError(`${cmd} exited ${r.code}${stderr ? `: ${stderr}` : ""}`);
+	}
+	return r.stdout;
+}
+
 async function git(pi: Exec, cwd: string, args: string[], okCodes: number[] = [0]): Promise<string | null> {
 	try {
-		const r = await pi.exec("git", args, { cwd, timeout: 20_000 });
-		return okCodes.includes(r.code) ? r.stdout : null;
+		return await gitStrict(pi, cwd, args, okCodes);
 	} catch {
 		return null;
 	}
@@ -52,10 +70,30 @@ export async function stagedFiles(pi: Exec, root: string): Promise<string[]> {
 	return lines(await git(pi, root, ["diff", "--cached", "--name-only"]));
 }
 
-async function untrackedFiles(pi: Exec, root: string, files?: string[]): Promise<string[]> {
-	const args = ["ls-files", "--others", "--exclude-standard"];
-	if (files) args.push("--", ...files);
-	return lines(await git(pi, root, args));
+const UNTRACKED = ["ls-files", "--others", "--exclude-standard"];
+
+/**
+ * Git-ignored untracked files among `files`, by exact declared file path only: a step may own an ignored file,
+ * but a declared directory must not pull in (or walk) its ignored build output. Output is filtered to the exact
+ * paths because git reads pathspecs as globs (`app/[id].ts` also matches `app/i.ts`).
+ */
+async function ignoredDeclared(pi: Exec, root: string, files: string[], run: typeof git | typeof gitStrict = git): Promise<string[]> {
+	const exact = files.filter(rel => {
+		try {
+			return statSync(join(root, rel), { throwIfNoEntry: false })?.isFile() ?? false;
+		} catch {
+			return false; // ENOTDIR, EACCES: not a file this step can have written
+		}
+	});
+	if (exact.length === 0) return [];
+	const out = await run(pi, root, [...UNTRACKED, "-z", "--ignored", "--", ...exact]); // -z: unquoted paths, non-ASCII included
+	return (out ?? "").split("\0").filter(rel => exact.includes(rel));
+}
+
+/** Untracked files, ignored ones left out; restricted to `files`, it adds their git-ignored exact paths (see ignoredDeclared). */
+async function untrackedFiles(pi: Exec, root: string, files?: string[], run: typeof git | typeof gitStrict = git): Promise<string[]> {
+	if (!files) return lines(await run(pi, root, UNTRACKED));
+	return [...lines(await run(pi, root, [...UNTRACKED, "--", ...files])), ...(await ignoredDeclared(pi, root, files, run))];
 }
 
 export async function unstagedFiles(pi: Exec, root: string): Promise<string[]> {
@@ -114,30 +152,33 @@ export async function changedLines(pi: Exec, root: string, files: string[], base
 	return total;
 }
 
-/** Staged diff of `files` against `base` (or HEAD). */
+/** Staged diff of `files` against `base` (or HEAD), plus git-ignored declared files in full (they cannot be staged without -f). */
 export async function stagedDiff(pi: Exec, root: string, files: string[], maxChars: number, base: string | null = null): Promise<string> {
 	if (files.length === 0) return "";
 	const args = ["diff", "--cached"];
 	if (base) args.push(base);
-	const out = await git(pi, root, [...args, "--", ...files]);
-	return truncate(out ?? "", maxChars);
+	let out = (await git(pi, root, [...args, "--", ...files])) ?? "";
+	for (const rel of await ignoredDeclared(pi, root, files)) {
+		out += (await git(pi, root, ["diff", "--no-index", "--", "/dev/null", rel], [0, 1])) ?? "";
+	}
+	return truncate(out, maxChars);
 }
 
-/** Worktree diff of `files` against `base` (or HEAD), plus untracked files in full. */
+/** Worktree diff of `files` against `base` (or HEAD), plus untracked files (declared ignored ones included) in full. Throws GitError if git fails. */
 export async function worktreeDiff(pi: Exec, root: string, files: string[], maxChars: number, base: string | null = null): Promise<string> {
 	if (files.length === 0) return "";
 	let out: string;
 	if (base) {
-		out = (await git(pi, root, ["diff", base, "--", ...files])) ?? "";
+		out = await gitStrict(pi, root, ["diff", base, "--", ...files]);
 	} else if (await hasHead(pi, root)) {
-		out = (await git(pi, root, ["diff", "HEAD", "--", ...files])) ?? "";
+		out = await gitStrict(pi, root, ["diff", "HEAD", "--", ...files]);
 	} else {
 		out =
-			((await git(pi, root, ["diff", "--cached", "--", ...files])) ?? "") +
-			((await git(pi, root, ["diff", "--", ...files])) ?? "");
+			(await gitStrict(pi, root, ["diff", "--cached", "--", ...files])) +
+			(await gitStrict(pi, root, ["diff", "--", ...files]));
 	}
-	for (const rel of await untrackedFiles(pi, root, files)) {
-		out += (await git(pi, root, ["diff", "--no-index", "--", "/dev/null", rel], [0, 1])) ?? "";
+	for (const rel of await untrackedFiles(pi, root, files, gitStrict)) {
+		out += await gitStrict(pi, root, ["diff", "--no-index", "--", "/dev/null", rel], [0, 1]);
 	}
 	return truncate(out, maxChars);
 }
