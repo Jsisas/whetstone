@@ -86,11 +86,11 @@ function mentionsIdent(body: string, idx: CodeIndex): boolean {
 
 /**
  * Apply the ladder to one markdown text. Level 0: invented code withheld. Level 1: generic
- * examples allowed, code naming the repository's identifiers withheld. Level 2: everything kept.
+ * examples allowed, code naming the repository's identifiers withheld. Level 2+: everything kept.
  * Quotes of indexed repository code are always kept; text outside fences is untouched.
  */
-export function stripBlocks(markdown: string, level: 0 | 1 | 2, idx: CodeIndex): string {
-	if (level === 2) return markdown;
+export function stripBlocks(markdown: string, level: 0 | 1 | 2 | 3, idx: CodeIndex): string {
+	if (level >= 2) return markdown;
 	const fences = findFences(markdown);
 	if (fences.length === 0) return markdown;
 	let out = "";

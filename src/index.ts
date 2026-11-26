@@ -15,7 +15,7 @@ import { prepareMeStep, registerFinishTool } from "./steps.ts";
 import type { Deps } from "./types.ts";
 
 /** Hint-ladder level while the operator owns the step (step or debug phase), else null. */
-function ladderLevel(): 0 | 1 | 2 | null {
+function ladderLevel(): 0 | 1 | 2 | 3 | null {
 	const task = getTask();
 	if (!task?.current || (task.phase !== "step" && task.phase !== "debug")) return null;
 	return currentStep()?.owner === "ME" ? task.current.hintLevel : null;

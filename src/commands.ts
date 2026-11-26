@@ -11,10 +11,10 @@ import { toolsFor } from "./policy.ts";
 import { restoreRenderer } from "./render-setting.ts";
 import { applyTools, currentStep, getTask, isEnabled, persist, setEnabled, setPhase, startTask } from "./state.ts";
 import { renderStats } from "./stats.ts";
-import { advance, finishTask } from "./steps.ts";
+import { advance, aiBrief, finishTask } from "./steps.ts";
 import type { Deps } from "./types.ts";
 
-export const SUBCOMMANDS = ["help", "status", "task", "cases", "hint", "show", "debug", "found", "done", "next", "skip", "stats", "off", "on", "init"];
+export const SUBCOMMANDS = ["help", "status", "task", "cases", "hint", "show", "solve", "do-it", "debug", "found", "done", "next", "skip", "stats", "off", "on", "init"];
 
 export const HELP = `Whetstone — plan-first AI coding that keeps your skills sharp
 
@@ -24,7 +24,8 @@ Workflow
   3. AI step                     The agent edits only the files the step declared, within the line budget.
                                  Test files stay locked until you write the cases: /whet cases.
   4. ME step                     You write the code; the agent pairs with you but cannot edit.
-                                 Its code blocks are withheld: /whet hint for generic examples, /whet show for your code.
+                                 Its code blocks are withheld: /whet hint for generic examples, /whet show for your code,
+                                 /whet solve for the full solution, /whet do-it to hand the step to the agent.
   5. A test or build fails       Debug mode: the agent asks for your hypothesis. /whet found <cause> unlocks the fix.
   6. Review                      Stage what you accept (git add), then /whet next and answer a short quiz on the diff.
   7. Repeat until the plan is done; you commit.
@@ -34,6 +35,8 @@ Commands
   /whet cases         write test cases; unlocks test files in an AI step
   /whet hint          ME step: allow generic code examples
   /whet show          ME step: allow code about your own codebase
+  /whet solve         ME step, after show: the agent writes out the full solution with a deep explanation
+  /whet do-it         ME step, after solve: the agent writes it into the files; the step becomes AI
   /whet debug         enter debug mode manually
   /whet found <cause> name the cause of a failure; leaves debug mode
   /whet done          ME step: you are finished; the agent reviews your diff
@@ -55,6 +58,15 @@ const REVIEW_PROMPT = (n: number) =>
 		"Do not edit anything. Code blocks are allowed here.",
 	].join("\n");
 
+const SOLVE_PROMPT = (n: number, title: string, files: string[]) =>
+	[
+		`WHETSTONE — the operator asked for the full solution to step ${n}: ${title}.`,
+		`Files: ${files.join(", ")}. You still may not edit; they will type it in themselves.`,
+		"Read whatever you need first. Then give the complete code for each file as fenced blocks, as diffs or whole functions, ready to transcribe.",
+		"Then explain in depth: why each design decision and alternative, which best practices it follows and why they matter here, how this code fits the overall system (callers, data flow, invariants it keeps or relies on), and what it does at the root level (runtime behavior, edge cases, failure modes).",
+		"End with how to verify it: the step's verify command and what passing looks like.",
+	].join("\n");
+
 function statusText(): string {
 	const head = `Whetstone: ${isEnabled() ? "on" : "off"}. `;
 	const task = getTask();
@@ -62,7 +74,7 @@ function statusText(): string {
 	const step = currentStep();
 	const cur = task.current;
 	if (!step || !cur) return `${head}"${task.description}" — ${task.phase}.`;
-	const hints = ["none", "hint", "show"][cur.hintLevel];
+	const hints = ["none", "hint", "show", "solve"][cur.hintLevel];
 	return `${head}"${task.description}" — ${task.phase}, step ${cur.index + 1}/${task.steps.length} (${step.owner}): ${step.title}; hints: ${hints}; tests ${cur.testsLocked ? "locked" : "unlocked"}.`;
 }
 
@@ -94,7 +106,45 @@ export function registerCommands(deps: Deps): void {
 		);
 	};
 
+	const solve: Handler = async (_args, ctx) => {
+		const t = getTask();
+		const cur = t?.current;
+		const step = currentStep();
+		if (!t || !cur || !step || !inMeStep()) return error(ctx, "WHETSTONE: /whet solve applies to your own (ME) steps.");
+		if (cur.hintLevel < 2) return error(ctx, "WHETSTONE: climb the ladder first — /whet show, then /whet solve.");
+		if (cur.hintLevel >= 3) return ctx.ui.notify("Whetstone: already at solve.", "info");
+		cur.hintLevel = 3;
+		cur.solveCount++;
+		await logEvent(deps, ctx, "solve", { step: cur.index + 1, level: 3, msSinceStepStart: deps.now() - cur.startedAt });
+		persist(pi);
+		ctx.ui.notify("Whetstone: solve level — the agent writes out the solution; you type it in.", "info");
+		await pi.sendUserMessage(SOLVE_PROMPT(cur.index + 1, step.title, step.files));
+	};
+
+	const doIt: Handler = async (_args, ctx) => {
+		const t = getTask();
+		const cur = t?.current;
+		const step = currentStep();
+		if (!t || !cur || !step || t.phase !== "step" || step.owner !== "ME") {
+			return error(ctx, "WHETSTONE: /whet do-it hands your current ME step to the agent (not during debug or review).");
+		}
+		if (cur.hintLevel < 3) return error(ctx, "WHETSTONE: /whet solve first, then /whet do-it.");
+		step.owner = "AI";
+		const config = configForRoot(t.repoRoot);
+		await logEvent(deps, ctx, "owner_flipped", { step: cur.index + 1, owner: "AI", reason: "do-it" });
+		await restoreRenderer(pi);
+		await applyTools(pi, toolsFor(t, config));
+		persist(pi);
+		ctx.ui.notify("Whetstone: step handed to the agent — it now counts as an AI step.", "info");
+		pi.sendMessage(
+			{ customType: "whetstone", display: true, content: aiBrief(t, config) },
+			{ deliverAs: "nextTurn", triggerTurn: true },
+		);
+	};
+
 	const handlers: Record<string, Handler> = {
+		solve,
+		"do-it": doIt,
 		async help() {
 			pi.sendMessage({ customType: "whetstone-help", display: true, excludeFromContext: true, content: HELP });
 		},
@@ -160,7 +210,7 @@ export function registerCommands(deps: Deps): void {
 			const t = getTask();
 			const cur = t?.current;
 			if (!t || !cur || t.phase !== "debug") return error(ctx, "WHETSTONE: not in debug mode.");
-			cur.debugger = cur.hintCount + cur.showCount > cur.hintsAtDebugStart ? "ai" : "me";
+			cur.debugger = cur.hintCount + cur.showCount + cur.solveCount > cur.hintsAtDebugStart ? "ai" : "me";
 			await logEvent(deps, ctx, "found", { step: cur.index + 1, cause, debugger: cur.debugger });
 			setPhase(t.returnPhase ?? "step");
 			t.returnPhase = null;

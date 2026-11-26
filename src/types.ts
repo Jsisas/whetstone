@@ -15,12 +15,13 @@ export interface StepState {
 	index: number;
 	startedAt: number;
 	testsLocked: boolean;
-	hintLevel: 0 | 1 | 2;
+	hintLevel: 0 | 1 | 2 | 3;
 	debugger: "me" | "ai" | null;
 	hintCount: number;
 	showCount: number;
+	solveCount: number;
 	debugStartedAt: number | null;
-	/** hintCount + showCount when debug mode began */
+	/** hintCount + showCount + solveCount when debug mode began */
 	hintsAtDebugStart: number;
 	/** `git write-tree` of the index when the step began; diffs and budgets are measured against it. */
 	baseTree: string | null;
@@ -73,6 +74,7 @@ export type LogEvent =
 	| "cases_entered"
 	| "hint"
 	| "show"
+	| "solve"
 	| "bash_approved"
 	| "bash_blocked"
 	| "tool_blocked"

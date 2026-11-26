@@ -12,7 +12,8 @@ Nothing is project-specific: defaults cover JS/TS, Python, Rust, Go, JVM, C/C++ 
 3. AI step                     The agent edits only the files the step declared, within the line budget.
                                Test files stay locked until you write the cases: /whet cases.
 4. ME step                     You write the code; the agent pairs with you but cannot edit.
-                               Its code blocks are withheld: /whet hint for generic examples, /whet show for your code.
+                               Its code blocks are withheld: /whet hint for generic examples, /whet show for your code,
+                               /whet solve for the full solution, /whet do-it to hand the step to the agent.
 5. A test or build fails       Debug mode: the agent asks for your hypothesis. /whet found <cause> unlocks the fix.
 6. Review                      Stage what you accept (git add), then /whet next and answer a short quiz on the diff.
 7. Repeat until the plan is done; you commit.
@@ -24,6 +25,8 @@ Nothing is project-specific: defaults cover JS/TS, Python, Rust, Go, JVM, C/C++ 
 | `/whet cases` | write test cases; unlocks test files in an AI step |
 | `/whet hint` | ME step: allow generic code examples |
 | `/whet show` | ME step: allow code about your own codebase |
+| `/whet solve` | ME step, after show: the agent writes out the full solution with a deep explanation |
+| `/whet do-it` | ME step, after solve: the agent writes it into the files; the step becomes AI |
 | `/whet debug` | enter debug mode manually |
 | `/whet found <cause>` | name the cause of a failure; leaves debug mode |
 | `/whet done` | ME step: you are finished; the agent reviews your diff |

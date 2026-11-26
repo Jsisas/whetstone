@@ -64,6 +64,7 @@ export function startStep(index: number, config: WhetConfig, now: number): StepS
 		debugger: null,
 		hintCount: 0,
 		showCount: 0,
+		solveCount: 0,
 		debugStartedAt: null,
 		hintsAtDebugStart: 0,
 		baseTree: null,

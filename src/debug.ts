@@ -33,7 +33,7 @@ export async function enterDebug(deps: Deps, ctx: ExtensionContext, command: str
 	task.returnPhase = "step";
 	task.phase = "debug";
 	cur.debugStartedAt = deps.now();
-	cur.hintsAtDebugStart = cur.hintCount + cur.showCount;
+	cur.hintsAtDebugStart = cur.hintCount + cur.showCount + cur.solveCount;
 	await applyTools(deps.pi, [...readOnlyTools(configForRoot(task.repoRoot)), "bash"]);
 	await logEvent(deps, ctx, "debug_start", { step: cur.index + 1, command });
 	persist(deps.pi);

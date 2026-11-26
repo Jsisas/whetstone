@@ -174,6 +174,7 @@ export async function advance(deps: Deps, ctx: ExtensionContext): Promise<void> 
 		hintLevel: cur.hintLevel,
 		hintCount: cur.hintCount,
 		showCount: cur.showCount,
+		solveCount: cur.solveCount,
 		durationMs: deps.now() - cur.startedAt,
 	});
 	task.quizResult = null;

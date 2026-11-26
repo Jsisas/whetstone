@@ -87,7 +87,7 @@ export function renderStats(records: LogRecord[], opts: StatsOptions): string {
 	const meSteps = steps.filter(r => r.owner === "ME");
 	if (meSteps.length > 0) {
 		const sum = (k: string) => meSteps.reduce((acc, r) => acc + (typeof r[k] === "number" ? (r[k] as number) : 0), 0);
-		out.push(`  Ladder: /whet hint ${sum("hintCount")}, /whet show ${sum("showCount")} across ${meSteps.length} ME steps`);
+		out.push(`  Ladder: /whet hint ${sum("hintCount")}, /whet show ${sum("showCount")}, /whet solve ${sum("solveCount")} across ${meSteps.length} ME steps`);
 	}
 	const total = counts(steps);
 	out.push(`  Target ME share ${pct(config.targetMeRatio, 1)}, actual ${pct(total.me, total.me + total.ai)}`);

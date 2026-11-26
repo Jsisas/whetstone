@@ -19,6 +19,7 @@ function end(daysAgo: number, owner: "ME" | "AI", area: string, extra: Partial<L
 		debugger: null,
 		hintCount: 0,
 		showCount: 0,
+		solveCount: 0,
 		...extra,
 	};
 }
@@ -27,7 +28,7 @@ const RECORDS: LogRecord[] = [
 	end(50, "ME", "src/billing"),
 	end(15, "AI", "src/billing"),
 	end(14, "AI", "src/http", { debugger: "ai" }),
-	end(8, "ME", "src/http", { debugger: "me", hintCount: 2, showCount: 1 }),
+	end(8, "ME", "src/http", { debugger: "me", hintCount: 2, showCount: 1, solveCount: 1 }),
 	end(1, "AI", "src/http"),
 	end(0, "ME", "src/http", { debugger: "me" }),
 	{ ts: new Date(NOW).toISOString(), repo: "github.com/x/y", session: "s", task: "t", event: "quiz_pass", score: "3/3", graded: "model" },
@@ -53,7 +54,7 @@ test("renders weeks, areas, debugging, quizzes, ladder and rust warnings", () =>
 			"",
 			"  You found the cause in 2 of 3 failures (67%)",
 			"  Last 2 quizzes: 1 pass, 0 fail, 1 skip (avg 3.0/3)",
-			"  Ladder: /whet hint 2, /whet show 1 across 3 ME steps",
+			"  Ladder: /whet hint 2, /whet show 1, /whet solve 1 across 3 ME steps",
 			"  Target ME share 40%, actual 50%",
 			"",
 			"  ⚠ no ME steps in src/billing for 7 weeks",
