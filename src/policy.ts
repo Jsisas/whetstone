@@ -223,6 +223,7 @@ export async function gate(event: GateEvent, ctx: ExtensionContext, deps: Deps):
 
 /** Bash inside a task: every segment that is not plainly read/test-only needs the operator's yes. */
 async function bashGate(command: string, ctx: ExtensionContext, deps: Deps, config: WhetConfig): Promise<GateResult> {
+	if (command.trim() === currentStep()?.verify.trim()) return undefined;
 	const pending = [...new Set(splitSegments(command).filter(s => needsConfirm(s, config)))];
 	for (const segment of pending) {
 		if (!ctx.hasUI) {

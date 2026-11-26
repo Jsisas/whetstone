@@ -142,30 +142,108 @@ export function commandWord(segment: string): string | null {
 	return i === -1 ? null : words[i]!;
 }
 
-const GIT_WRITES = new Set([
-	"add", "commit", "push", "reset", "rm", "mv", "restore", "checkout", "switch", "merge", "rebase", "cherry-pick",
-	"revert", "stash", "tag", "clean", "apply", "am", "filter-branch", "update-ref", "gc", "prune", "notes",
-	"worktree", "submodule", "config", "pull", "fetch", "init", "clone",
-]);
-const GIT_REF_WRITE_ARGS = new Set(["-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "add", "remove", "rm", "rename", "set-url"]);
+const base = (w: string): string => w.split("/").pop()!;
 
-/** The git subcommand when `segment` is a git write, else null. */
-export function gitWriteSubcommand(segment: string): string | null {
-	const words = tokenize(segment);
-	let i = commandIndex(words);
-	if (i === -1 || words[i] !== "git") return null;
-	for (i++; i < words.length; i++) {
-		const w = words[i]!;
-		if (w === "-C" || w === "-c") {
+const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
+const WRAPPERS = new Set([
+	"sudo", "doas", "timeout", "nohup", "nice", "ionice", "stdbuf", "xargs", "watch", "chronic", "unbuffer", "flock",
+	"env", "command", "exec", "time",
+]);
+const PREFIX_WRAPPERS = ["sudo", "env", "command", "exec", "time", "nice"];
+const GIT_VALUE_OPTS = new Set(["-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix"]);
+const GIT_READ = new Set([
+	"status", "diff", "log", "show", "blame", "annotate", "grep", "ls-files", "ls-tree", "ls-remote", "rev-parse", "rev-list",
+	"cat-file", "describe", "shortlog", "show-ref", "show-branch", "merge-base", "name-rev", "for-each-ref", "count-objects",
+	"check-ignore", "check-attr", "check-ref-format", "cherry", "range-diff", "whatchanged", "help", "version", "var",
+	"diff-tree", "diff-files", "diff-index", "verify-commit", "verify-tag",
+]);
+
+const set = (...v: string[]): Set<string> => new Set(v);
+const BRANCH_WRITE = set("-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy", "-f", "--force", "-u", "--set-upstream-to", "--unset-upstream", "--edit-description", "-t", "--track", "--no-track");
+const BRANCH_LIST = set("--list", "-l", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at");
+const TAG_WRITE = set("-d", "--delete", "-f", "--force", "-a", "--annotate", "-s", "--sign", "-u", "--local-user", "-m", "--message", "-F", "--file");
+const TAG_LIST = set("-l", "--list", "-v", "--verify", "--contains", "--no-contains", "--points-at", "--merged", "--no-merged");
+const CONFIG_WRITE = set("--unset", "--unset-all", "--add", "--replace-all", "--edit", "-e", "--rename-section", "--remove-section");
+const CONFIG_READ = set("--get", "--get-all", "--get-regexp", "--list", "-l");
+
+/** Subcommands that are read-only only for some arguments; `pos` = non-option words, `flag` tests option names. */
+const GIT_READ_WHEN: Record<string, (pos: string[], flag: (s: Set<string>) => boolean) => boolean> = {
+	branch: (pos, flag) => !flag(BRANCH_WRITE) && (pos.length === 0 || flag(BRANCH_LIST)),
+	tag: (pos, flag) => !flag(TAG_WRITE) && (pos.length === 0 || flag(TAG_LIST)),
+	remote: pos => pos.length === 0 || ["show", "get-url"].includes(pos[0]!),
+	stash: pos => ["list", "show"].includes(pos[0] ?? ""),
+	config: (pos, flag) => !flag(CONFIG_WRITE) && (flag(CONFIG_READ) || ["get", "list"].includes(pos[0] ?? "")),
+	worktree: pos => pos[0] === "list",
+	notes: pos => pos.length === 0 || ["list", "show"].includes(pos[0]!),
+	submodule: pos => ["status", "summary"].includes(pos[0] ?? ""),
+	reflog: pos => pos.length === 0 || pos[0] === "show",
+	bisect: pos => ["log", "visualize", "view"].includes(pos[0] ?? ""),
+	lfs: pos => ["ls-files", "status", "env", "version"].includes(pos[0] ?? ""),
+	"sparse-checkout": pos => pos[0] === "list",
+};
+
+/** Judge the words after `git`: the subcommand when it is (or may be) a write, else null. Only known reads pass. */
+function gitSub(args: string[]): string | null {
+	let i = 0;
+	for (; i < args.length; i++) {
+		const a = args[i]!;
+		if (a === "-c" || a.split("=")[0] === "--config-env") return "-c";
+		if (GIT_VALUE_OPTS.has(a)) {
 			i++;
 			continue;
 		}
-		if (w.startsWith("-")) continue;
-		if (GIT_WRITES.has(w)) return w;
-		if ((w === "branch" || w === "remote") && words.slice(i + 1).some(a => GIT_REF_WRITE_ARGS.has(a))) return w;
-		return null;
+		if (a.startsWith("-")) continue;
+		break;
+	}
+	const sub = args[i];
+	if (sub === undefined) return null;
+	const rest = args.slice(i + 1);
+	if (rest.some(a => a.split("=")[0] === "--output")) return sub;
+	if (GIT_READ.has(sub)) return null;
+	const when = GIT_READ_WHEN[sub];
+	if (when) {
+		const pos = rest.filter(a => !a.startsWith("-"));
+		const flag = (s: Set<string>) => rest.some(a => s.has(a.split("=")[0]!));
+		if (when(pos, flag)) return null;
+	}
+	return sub;
+}
+
+/** The first git write found in a list of shell command segments, else null. */
+function firstGitWrite(code: string): string | null {
+	for (const seg of splitSegments(code)) {
+		const w = gitWriteSubcommand(seg);
+		if (w) return w;
 	}
 	return null;
+}
+
+// Best-effort against a cooperative agent: variable indirection (`$g commit`), `env -S` and ANSI-C `$'…'` quoting are not detected.
+function gitWriteInWords(words: string[]): string | null {
+	const i = commandIndex(words);
+	if (i === -1) return null;
+	const w = base(words[i]!);
+	if (w === "git") return gitSub(words.slice(i + 1));
+	if (SHELLS.has(w)) {
+		const c = words.findIndex((x, k) => k > i && /^-[a-zA-Z]*c[a-zA-Z]*$/.test(x));
+		const code = c === -1 ? undefined : words[c + 1];
+		return code === undefined ? null : firstGitWrite(code);
+	}
+	if (w === "eval") return firstGitWrite(words.slice(i + 1).join(" "));
+	if (w === "find") {
+		const k = words.findIndex((x, j) => j > i && ["-exec", "-execdir", "-ok", "-okdir"].includes(x));
+		if (k !== -1) return gitWriteInWords(words.slice(k + 1));
+	}
+	if (WRAPPERS.has(w) || words.slice(0, i).some(x => PREFIX_WRAPPERS.includes(x))) {
+		const k = words.findIndex((x, j) => j > i && (base(x) === "git" || base(x) === "eval" || SHELLS.has(base(x))));
+		return k === -1 ? null : gitWriteInWords(words.slice(k));
+	}
+	return null;
+}
+
+/** The git subcommand when `segment` is a git write (or may be one), else null. */
+export function gitWriteSubcommand(segment: string): string | null {
+	return gitWriteInWords(tokenize(segment));
 }
 
 const SAFE_TARGETS = new Set(["/dev/null", "/dev/stdout", "/dev/stderr"]);
@@ -210,13 +288,22 @@ export function hasRedirection(segment: string): boolean {
 
 const MUTATING_FLAGS = new Set(["--fix", "--write", "--unsafe-fixes"]);
 
+const RUNTIMES = new Set(["node", "bun", "deno", "python", "python3", "uv", "npx", "bunx"]);
+const EVAL_FLAGS = new Set(["-e", "--eval", "-p", "--print"]);
+
+/** Whether the allowlist entry (one or more words) is a word prefix of the command starting at `i`. */
+function allowedPrefix(entry: string, words: string[], i: number): boolean {
+	return entry.trim().split(/\s+/).every((t, k) => words[i + k] === t);
+}
+
 /** Whether the operator must confirm this segment before the agent runs it. */
 export function needsConfirm(segment: string, config: WhetConfig): boolean {
 	const words = tokenize(segment);
 	const i = commandIndex(words);
 	if (i === -1) return false;
 	if (words.slice(0, i).includes("sudo")) return true;
-	if (!config.allowedCommands.includes(words[i]!)) return true;
+	if (!config.allowedCommands.some(entry => allowedPrefix(entry, words, i))) return true;
+	if (RUNTIMES.has(words[i]!) && words.slice(i + 1).some(w => EVAL_FLAGS.has(w))) return true;
 	if (words.slice(i + 1).some(w => MUTATING_FLAGS.has(w.split("=")[0]!))) return true;
 	return hasRedirection(segment);
 }

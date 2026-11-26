@@ -139,7 +139,13 @@ export function registerPlanTool(deps: Deps): void {
 						true,
 					);
 				}
-				// cancel or dismissed
+				if (choice === undefined) {
+					task.phase = "planning";
+					await logEvent(deps, ctx, "plan_rejected", { reason: "dismissed", message: "" });
+					persist(pi);
+					return text("WHETSTONE_PLAN_REJECTED: the operator closed the plan picker. Ask what to change, then submit again.", true);
+				}
+				// cancel
 				await logEvent(deps, ctx, "task_end", { reason: "cancelled" });
 				endTask();
 				await applyTools(pi, task.savedTools);

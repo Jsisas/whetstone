@@ -70,6 +70,11 @@ export async function changedFiles(pi: Exec, root: string, files: string[], base
 	return [...new Set([...modified, ...(await untrackedFiles(pi, root, files))])];
 }
 
+/** Tracked files that differ from `base` (a tree from writeTree) in the worktree; untracked files are left out on purpose. */
+export async function trackedChangesSince(pi: Exec, root: string, base: string): Promise<string[]> {
+	return lines(await git(pi, root, ["diff", "--name-only", base]));
+}
+
 function sumNumstat(out: string | null): number {
 	let total = 0;
 	for (const line of lines(out)) {

@@ -95,6 +95,12 @@ export function registerFinishTool(deps: Deps): void {
 			if (actual > config.budget.lines) {
 				return reject(`${actual} lines changed, budget is ${config.budget.lines}. Revert the excess or ask the operator to re-plan.`);
 			}
+			if (task.current.baseTree) {
+				const extra = (await git.trackedChangesSince(deps.pi, task.repoRoot, task.current.baseTree)).filter(f => !declared.includes(f));
+				if (extra.length > 0) {
+					ctx.ui.notify(`Whetstone: step ${n} also changed files outside its scope: ${extra.join(", ")}. Check them before staging.`, "warning");
+				}
+			}
 			setPhase("review");
 			await applyTools(deps.pi, [...readOnlyTools(config), "bash"]);
 			persist(deps.pi);

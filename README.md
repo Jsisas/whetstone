@@ -36,6 +36,7 @@ Nothing is project-specific: defaults cover JS/TS, Python, Rust, Go, JVM, C/C++ 
 | `/whet help` | the workflow and command list |
 
 Inside a task the agent never runs git writes; staging and committing are yours. Outside a task Whetstone does nothing unless `alwaysOn: true`, in which case protected paths and the no-agent-git-writes rule apply in every session.
+Git aliases and unknown git subcommands are treated as writes; only known read-only subcommands pass.
 
 ## Install
 
@@ -59,7 +60,7 @@ Files, lowest to highest precedence: built-in defaults, `~/.omp/agent/whetstone/
 | `budget.files` | `3` | maximum files per step |
 | `quiz.length` | `3` | questions per quiz; `0` disables quizzes |
 | `quiz.passRatio` | `0.67` | you pass with at least `ceil(length × passRatio)` right answers (3 of 3 at the defaults; `0.66` makes it 2 of 3) |
-| `allowedCommands` | common read-only, build and test tools | commands the agent may run without asking; anything else, any `>` redirection, `tee`, `sudo`, or `--fix`/`--write` flags need your confirmation |
+| `allowedCommands` | read-only tools plus test/check invocations such as "npm test", "cargo check" | command prefixes (one or more words) the agent may run without asking; entries are word prefixes, and `-e`/`--eval` on runtimes always asks; anything else, any `>` redirection, `tee`, `sudo`, or `--fix`/`--write` flags need your confirmation |
 | `testCommands` | common build and test tools | commands whose failure starts debug mode |
 | `extraReadOnlyTools` | `[]` | extra omp tools allowed in every phase (they must not write files) |
 | `extraShellTools` | `[]` | extra tools whose `command` argument is checked for git writes like `bash` |

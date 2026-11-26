@@ -76,3 +76,11 @@ test("cancelling ends the task and restores the operator's tools", async () => {
 	expect(getTask()).toBeNull();
 	expect(s.active).toEqual(INITIAL_ACTIVE);
 });
+
+test("dismissing the picker sends the plan back to planning instead of cancelling", async () => {
+	const s = await planning([undefined]);
+	const r = await s.tool("whet_submit_plan", { summary: "s", steps: [step()] });
+	expect(r.isError).toBe(true);
+	expect(r.text).toStartWith("WHETSTONE_PLAN_REJECTED: the operator closed the plan picker");
+	expect(getTask()!.phase).toBe("planning");
+});
