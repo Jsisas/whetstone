@@ -1,0 +1,39 @@
+{
+  "name": "omp-whetstone",
+  "version": "0.1.0",
+  "description": "omp plugin: plan-first, owner-per-step AI coding that keeps you in control and your skills sharp",
+  "type": "module",
+  "license": "MIT",
+  "author": "Joosep Sisas",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsisas/whetstone.git"
+  },
+  "keywords": [
+    "omp",
+    "oh-my-pi",
+    "omp-plugin",
+    "ai-coding",
+    "learning"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "omp": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "bun test",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-coding-agent": "^19",
+    "@types/bun": "latest",
+    "typescript": "^5",
+    "zod": "^4"
+  }
+}

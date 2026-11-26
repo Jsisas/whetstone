@@ -1,0 +1,28 @@
+{
+  "name": "jsisas",
+  "owner": {
+    "name": "Joosep Sisas"
+  },
+  "metadata": {
+    "description": "omp plugins by jsisas"
+  },
+  "plugins": [
+    {
+      "name": "whetstone",
+      "source": "./",
+      "description": "Plan-first AI coding with per-step ownership, hint ladder, debug mode and diff quizzes",
+      "version": "0.1.0",
+      "author": {
+        "name": "Joosep Sisas"
+      },
+      "homepage": "https://github.com/jsisas/whetstone",
+      "license": "MIT",
+      "category": "development",
+      "keywords": [
+        "learning",
+        "workflow",
+        "guardrails"
+      ]
+    }
+  ]
+}
